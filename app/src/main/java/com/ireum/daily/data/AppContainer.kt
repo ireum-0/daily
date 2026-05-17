@@ -14,7 +14,9 @@ class AppContainer(context: Context) {
         context.applicationContext,
         DailyDatabase::class.java,
         "daily.db"
-    ).build()
+    )
+        .addMigrations(DailyDatabase.MIGRATION_1_2)
+        .build()
 
     private val neisMealApi: NeisMealApi = Retrofit.Builder()
         .baseUrl("https://open.neis.go.kr/")
@@ -34,5 +36,9 @@ class AppContainer(context: Context) {
             schoolCode = BuildConfig.DEFAULT_SCHOOL_CODE,
             schoolName = BuildConfig.DEFAULT_SCHOOL_NAME
         )
+    )
+
+    val taskRepository = TaskRepository(
+        taskDao = database.taskDao()
     )
 }

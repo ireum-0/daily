@@ -33,7 +33,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             DailyTheme {
                 val viewModel: MealViewModel = viewModel(
-                    factory = MealViewModel.Factory(appContainer.mealRepository)
+                    factory = MealViewModel.Factory(
+                        mealRepository = appContainer.mealRepository,
+                        taskRepository = appContainer.taskRepository
+                    )
                 )
                 MealScreen(viewModel = viewModel)
             }

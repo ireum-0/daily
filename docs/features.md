@@ -12,6 +12,10 @@ This file is the working feature map for future additions.
   - Shows the active school's meal table.
   - Shows only school days: Monday, Tuesday, Wednesday, Thursday, Friday.
   - If the app is not configured yet, shows the initial setup form instead of the meal table.
+- Task
+  - Shows manually saved tasks.
+  - Separates active tasks from completed tasks.
+  - Lets the user add, edit, delete, and complete tasks.
 - Settings
   - Stores the NEIS API key.
   - Searches and saves the school.
@@ -99,6 +103,21 @@ The school can come from:
 - Notifications require Android notification permission on Android 13 and newer.
 - Alarms are rescheduled after device boot.
 
+## Manual Tasks
+
+- The Task tab supports manual task management.
+- A task can include:
+  - title
+  - subject
+  - due date
+- Title is required.
+- Due date is optional.
+- When provided, due date must use `YYYY-MM-DD`.
+- Tasks can be edited from the list.
+- Tasks can be marked done or moved back to active.
+- Tasks can be deleted.
+- Active and completed tasks are displayed in separate sections.
+
 ## Current Storage
 
 - DataStore preferences:
@@ -107,6 +126,7 @@ The school can come from:
   - favorite menu keywords
 - Room:
   - cached meal rows
+  - manually saved tasks
 
 ## Known Follow-Up Ideas
 
@@ -115,3 +135,5 @@ The school can come from:
 - Add notification support for favorite menu matches.
 - Add tests for week-start calculation and favorite menu matching.
 - Add a nicer icon-based bottom navigation.
+- Add today/tomorrow/this-week task classification.
+- Add Home task summary cards.

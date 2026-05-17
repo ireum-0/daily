@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -80,6 +81,18 @@ fun MealScreen(viewModel: MealViewModel) {
                     onSelectSchool = viewModel::selectSchool
                 )
 
+                AppTab.Task -> TaskTab(
+                    uiState = uiState,
+                    onTitleChange = viewModel::updateTaskTitle,
+                    onSubjectChange = viewModel::updateTaskSubject,
+                    onDueDateChange = viewModel::updateTaskDueDate,
+                    onSaveTask = viewModel::saveTask,
+                    onEditTask = viewModel::editTask,
+                    onCancelEdit = viewModel::cancelTaskEdit,
+                    onSetDone = viewModel::setTaskDone,
+                    onDeleteTask = viewModel::deleteTask
+                )
+
                 AppTab.Settings -> SettingsTab(
                     uiState = uiState,
                     onApiKeyChange = viewModel::updateApiKey,
@@ -114,6 +127,17 @@ private fun DailyBottomBar(
             label = { Text("홈") }
         )
         NavigationBarItem(
+            selected = selectedTab == AppTab.Task,
+            onClick = { onSelectTab(AppTab.Task) },
+            icon = {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_nav_task),
+                    contentDescription = null
+                )
+            },
+            label = { Text("과제") }
+        )
+        NavigationBarItem(
             selected = selectedTab == AppTab.Settings,
             onClick = { onSelectTab(AppTab.Settings) },
             icon = {
@@ -124,6 +148,231 @@ private fun DailyBottomBar(
             },
             label = { Text("설정") }
         )
+    }
+}
+
+@Composable
+private fun TaskTab(
+    uiState: MealUiState,
+    onTitleChange: (String) -> Unit,
+    onSubjectChange: (String) -> Unit,
+    onDueDateChange: (String) -> Unit,
+    onSaveTask: () -> Unit,
+    onEditTask: (Long) -> Unit,
+    onCancelEdit: () -> Unit,
+    onSetDone: (Long, Boolean) -> Unit,
+    onDeleteTask: (Long) -> Unit
+) {
+    ScreenColumn {
+        SectionTitle(
+            title = "과제",
+            description = "오늘 확인할 과제를 직접 추가하고 완료 처리하세요."
+        )
+
+        TaskEditorSection(
+            uiState = uiState,
+            onTitleChange = onTitleChange,
+            onSubjectChange = onSubjectChange,
+            onDueDateChange = onDueDateChange,
+            onSaveTask = onSaveTask,
+            onCancelEdit = onCancelEdit
+        )
+
+        TaskListSection(
+            title = "할 일",
+            emptyText = "진행 중인 과제가 없습니다.",
+            tasks = uiState.tasks.filterNot(TaskUiState::isDone),
+            onEditTask = onEditTask,
+            onSetDone = onSetDone,
+            onDeleteTask = onDeleteTask
+        )
+
+        TaskListSection(
+            title = "완료",
+            emptyText = "완료한 과제가 없습니다.",
+            tasks = uiState.tasks.filter(TaskUiState::isDone),
+            onEditTask = onEditTask,
+            onSetDone = onSetDone,
+            onDeleteTask = onDeleteTask
+        )
+    }
+}
+
+@Composable
+private fun TaskEditorSection(
+    uiState: MealUiState,
+    onTitleChange: (String) -> Unit,
+    onSubjectChange: (String) -> Unit,
+    onDueDateChange: (String) -> Unit,
+    onSaveTask: () -> Unit,
+    onCancelEdit: () -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            SectionTitle(
+                title = if (uiState.editingTaskId == null) "과제 추가" else "과제 수정",
+                description = "제목은 필수이고, 기한은 2026-05-21 형식으로 입력하세요."
+            )
+
+            OutlinedTextField(
+                value = uiState.taskTitleInput,
+                onValueChange = onTitleChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("제목") },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
+            )
+
+            OutlinedTextField(
+                value = uiState.taskSubjectInput,
+                onValueChange = onSubjectChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("과목") },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
+            )
+
+            OutlinedTextField(
+                value = uiState.taskDueDateInput,
+                onValueChange = onDueDateChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("기한") },
+                placeholder = { Text("YYYY-MM-DD") },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(onDone = { onSaveTask() })
+            )
+
+            uiState.taskMessage?.let { message ->
+                val isError = message == TaskMessage.EmptyTitle ||
+                    message == TaskMessage.InvalidDueDate
+                Text(
+                    text = message.toDisplayText(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isError) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    }
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onSaveTask) {
+                    Text(if (uiState.editingTaskId == null) "추가" else "수정 저장")
+                }
+                if (uiState.editingTaskId != null) {
+                    OutlinedButton(onClick = onCancelEdit) {
+                        Text("취소")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskListSection(
+    title: String,
+    emptyText: String,
+    tasks: List<TaskUiState>,
+    onEditTask: (Long) -> Unit,
+    onSetDone: (Long, Boolean) -> Unit,
+    onDeleteTask: (Long) -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "$title ${tasks.size}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            if (tasks.isEmpty()) {
+                Text(
+                    text = emptyText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            tasks.forEachIndexed { index, task ->
+                if (index > 0) {
+                    HorizontalDivider()
+                }
+                TaskRow(
+                    task = task,
+                    onEditTask = onEditTask,
+                    onSetDone = onSetDone,
+                    onDeleteTask = onDeleteTask
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskRow(
+    task: TaskUiState,
+    onEditTask: (Long) -> Unit,
+    onSetDone: (Long, Boolean) -> Unit,
+    onDeleteTask: (Long) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = task.isDone,
+            onCheckedChange = { checked -> onSetDone(task.id, checked) }
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = task.title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (task.isDone) FontWeight.Normal else FontWeight.SemiBold,
+                color = if (task.isDone) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                }
+            )
+            Text(
+                text = listOf(task.subjectName, task.dueDateText)
+                    .filter(String::isNotBlank)
+                    .joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        TextButton(onClick = { onEditTask(task.id) }) {
+            Text("수정")
+        }
+        TextButton(onClick = { onDeleteTask(task.id) }) {
+            Text("삭제")
+        }
     }
 }
 
@@ -745,4 +994,13 @@ private fun SchoolMessage.toDisplayText(): String =
         SchoolMessage.ApiKeySaved -> "NEIS API 키가 저장되었습니다."
         SchoolMessage.NotificationTimeSaved -> "알림 시간이 저장되었습니다."
         SchoolMessage.InvalidNotificationTime -> "알림 시간은 시 0-23, 분 0-59 범위로 입력해 주세요."
+    }
+
+private fun TaskMessage.toDisplayText(): String =
+    when (this) {
+        TaskMessage.EmptyTitle -> "과제 제목을 입력해 주세요."
+        TaskMessage.InvalidDueDate -> "기한은 YYYY-MM-DD 형식으로 입력해 주세요."
+        TaskMessage.Saved -> "과제가 추가되었습니다."
+        TaskMessage.Updated -> "과제가 수정되었습니다."
+        TaskMessage.Deleted -> "과제가 삭제되었습니다."
     }

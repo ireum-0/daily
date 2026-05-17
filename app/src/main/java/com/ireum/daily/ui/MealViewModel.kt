@@ -8,10 +8,13 @@ import com.ireum.daily.data.MealRepository
 import com.ireum.daily.data.SchoolConfig
 import com.ireum.daily.data.SchoolSearchItem
 import com.ireum.daily.data.SchoolSearchResult
+import com.ireum.daily.data.TaskRepository
+import com.ireum.daily.data.local.TaskEntity
 import com.ireum.daily.data.preferences.NotificationTime
 import com.ireum.daily.core.util.findMatchingFavoriteMenus
 import com.ireum.daily.core.util.startOfSchoolWeek
 import com.ireum.daily.model.Meal
+import com.ireum.daily.model.TaskStatus
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -25,7 +28,8 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 class MealViewModel(
-    private val mealRepository: MealRepository
+    private val mealRepository: MealRepository,
+    private val taskRepository: TaskRepository
 ) : ViewModel() {
     private val weekStart = MutableStateFlow(LocalDate.now().startOfSchoolWeek())
     private val selectedDate = MutableStateFlow(weekStart.value)
@@ -39,6 +43,11 @@ class MealViewModel(
     private val schoolMessage = MutableStateFlow<SchoolMessage?>(null)
     private val notificationHourInput = MutableStateFlow("")
     private val notificationMinuteInput = MutableStateFlow("")
+    private val taskTitleInput = MutableStateFlow("")
+    private val taskSubjectInput = MutableStateFlow("")
+    private val taskDueDateInput = MutableStateFlow("")
+    private val editingTaskId = MutableStateFlow<Long?>(null)
+    private val taskMessage = MutableStateFlow<TaskMessage?>(null)
 
     private val setupState = combine(
         mealRepository.schoolConfig,
@@ -127,6 +136,22 @@ class MealViewModel(
         )
     }
 
+    private val taskInputState = combine(
+        taskTitleInput,
+        taskSubjectInput,
+        taskDueDateInput,
+        editingTaskId,
+        taskMessage
+    ) { title, subject, dueDate, editingId, message ->
+        TaskInputState(
+            title = title,
+            subject = subject,
+            dueDate = dueDate,
+            editingTaskId = editingId,
+            message = message
+        )
+    }
+
     private val screenState = combine(
         setupState,
         mealDisplayState,
@@ -145,8 +170,10 @@ class MealViewModel(
 
     val uiState = combine(
         screenState,
-        notificationInputState
-    ) { screen, notificationState ->
+        notificationInputState,
+        taskRepository.observeTasks(),
+        taskInputState
+    ) { screen, notificationState, tasks, taskInput ->
         MealUiState(
             selectedTab = screen.selectedTab,
             isLoading = screen.refresh.isLoading,
@@ -177,7 +204,13 @@ class MealViewModel(
             } else {
                 null
             },
-            schoolMessage = screen.searchState.message
+            schoolMessage = screen.searchState.message,
+            tasks = tasks.map(TaskEntity::toUiState),
+            taskTitleInput = taskInput.title,
+            taskSubjectInput = taskInput.subject,
+            taskDueDateInput = taskInput.dueDate,
+            editingTaskId = taskInput.editingTaskId,
+            taskMessage = taskInput.message
         )
     }.stateIn(
         scope = viewModelScope,
@@ -327,12 +360,93 @@ class MealViewModel(
         }
     }
 
+    fun updateTaskTitle(title: String) {
+        taskTitleInput.value = title
+        taskMessage.value = null
+    }
+
+    fun updateTaskSubject(subject: String) {
+        taskSubjectInput.value = subject
+        taskMessage.value = null
+    }
+
+    fun updateTaskDueDate(dueDate: String) {
+        taskDueDateInput.value = dueDate.filter { char -> char.isDigit() || char == '-' }.take(10)
+        taskMessage.value = null
+    }
+
+    fun saveTask() {
+        viewModelScope.launch {
+            val title = taskTitleInput.value.trim()
+            if (title.isBlank()) {
+                taskMessage.value = TaskMessage.EmptyTitle
+                return@launch
+            }
+
+            val dueDate = taskDueDateInput.value.trim().takeIf(String::isNotBlank)
+            if (dueDate != null && dueDate.toLocalDateOrNull() == null) {
+                taskMessage.value = TaskMessage.InvalidDueDate
+                return@launch
+            }
+
+            val editingId = editingTaskId.value
+            taskRepository.saveTask(
+                id = editingId,
+                title = title,
+                subjectName = taskSubjectInput.value.trim().takeIf(String::isNotBlank),
+                dueDate = dueDate
+            )
+            clearTaskInput()
+            taskMessage.value = if (editingId == null) TaskMessage.Saved else TaskMessage.Updated
+        }
+    }
+
+    fun editTask(id: Long) {
+        viewModelScope.launch {
+            val task = taskRepository.getTask(id) ?: return@launch
+            editingTaskId.value = task.id
+            taskTitleInput.value = task.title
+            taskSubjectInput.value = task.subjectName.orEmpty()
+            taskDueDateInput.value = task.dueDate.orEmpty()
+            taskMessage.value = null
+        }
+    }
+
+    fun cancelTaskEdit() {
+        clearTaskInput()
+        taskMessage.value = null
+    }
+
+    fun setTaskDone(id: Long, done: Boolean) {
+        viewModelScope.launch {
+            taskRepository.setDone(id, done)
+        }
+    }
+
+    fun deleteTask(id: Long) {
+        viewModelScope.launch {
+            taskRepository.deleteTask(id)
+            if (editingTaskId.value == id) {
+                clearTaskInput()
+            }
+            taskMessage.value = TaskMessage.Deleted
+        }
+    }
+
+    private fun clearTaskInput() {
+        editingTaskId.value = null
+        taskTitleInput.value = ""
+        taskSubjectInput.value = ""
+        taskDueDateInput.value = ""
+    }
+
     class Factory(
-        private val mealRepository: MealRepository
+        private val mealRepository: MealRepository,
+        private val taskRepository: TaskRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return MealViewModel(mealRepository) as T
+            return MealViewModel(mealRepository, taskRepository) as T
         }
     }
 }
@@ -383,6 +497,14 @@ private data class NotificationInputState(
     val timeText: String
 )
 
+private data class TaskInputState(
+    val title: String,
+    val subject: String,
+    val dueDate: String,
+    val editingTaskId: Long?,
+    val message: TaskMessage?
+)
+
 private val neisDateFormatter = DateTimeFormatter.BASIC_ISO_DATE
 private const val SCHOOL_WEEK_DAY_COUNT = 5L
 
@@ -390,6 +512,20 @@ private fun LocalDate.toNeisDate(): String = format(neisDateFormatter)
 
 private fun LocalDate.endOfSchoolWeek(): LocalDate =
     plusDays(SCHOOL_WEEK_DAY_COUNT - 1)
+
+private fun String.toLocalDateOrNull(): LocalDate? =
+    runCatching { LocalDate.parse(this) }.getOrNull()
+
+private fun TaskEntity.toUiState(): TaskUiState =
+    TaskUiState(
+        id = id,
+        title = title,
+        subjectName = subjectName.orEmpty(),
+        dueDateText = dueDate?.let { date ->
+            LocalDate.parse(date).format(DateTimeFormatter.ofPattern("M.d E", Locale.KOREAN))
+        } ?: "기한 없음",
+        isDone = status == TaskStatus.DONE
+    )
 
 private fun List<Meal>.findFavoriteMealMatches(favoriteMenus: Set<String>): List<FavoriteMealMatchUiState> =
     mapNotNull { meal ->

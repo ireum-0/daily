@@ -54,7 +54,9 @@ class FavoriteMealAlarmReceiver : BroadcastReceiver() {
             context,
             DailyDatabase::class.java,
             "daily.db"
-        ).build()
+        )
+            .addMigrations(DailyDatabase.MIGRATION_1_2)
+            .build()
 
         val breakfastMeals = try {
             database.mealDao()
