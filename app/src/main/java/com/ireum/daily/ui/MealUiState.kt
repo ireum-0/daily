@@ -39,6 +39,9 @@ data class MealUiState(
     val taskDueDateInput: String = "",
     val editingTaskId: Long? = null,
     val taskMessage: TaskMessage? = null,
+    val importPasteInput: String = "",
+    val importedTaskCandidates: List<ImportedTaskCandidateUiState> = emptyList(),
+    val taskImportMessage: TaskImportMessage? = null,
     val morningSummaryEnabled: Boolean = false,
     val morningSummaryHourInput: String = "",
     val morningSummaryMinuteInput: String = "",
@@ -83,6 +86,16 @@ data class TaskUiState(
     val isDone: Boolean
 )
 
+data class ImportedTaskCandidateUiState(
+    val id: Int,
+    val titleInput: String,
+    val subjectInput: String,
+    val dueDateInput: String,
+    val rawText: String,
+    val warnings: List<String>,
+    val possibleDuplicate: TaskUiState?
+)
+
 enum class MealMessage {
     MissingApiKey,
     MissingSchool,
@@ -111,4 +124,15 @@ enum class TaskMessage {
     Saved,
     Updated,
     Deleted
+}
+
+enum class TaskImportMessage {
+    EmptyPaste,
+    NoCandidates,
+    CandidatesFound,
+    CandidateSaved,
+    CandidateUpdated,
+    CandidateIgnored,
+    InvalidCandidateDueDate,
+    EmptyCandidateTitle
 }

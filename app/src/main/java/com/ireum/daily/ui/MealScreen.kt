@@ -102,7 +102,15 @@ fun MealScreen(viewModel: MealViewModel) {
                     onEditTask = viewModel::editTask,
                     onCancelEdit = viewModel::cancelTaskEdit,
                     onSetDone = viewModel::setTaskDone,
-                    onDeleteTask = viewModel::deleteTask
+                    onDeleteTask = viewModel::deleteTask,
+                    onImportPasteChange = viewModel::updateImportPaste,
+                    onAnalyzeImport = viewModel::analyzeImportedTasks,
+                    onImportedTitleChange = viewModel::updateImportedCandidateTitle,
+                    onImportedSubjectChange = viewModel::updateImportedCandidateSubject,
+                    onImportedDueDateChange = viewModel::updateImportedCandidateDueDate,
+                    onSaveImportedCandidate = viewModel::saveImportedCandidate,
+                    onUpdateExistingImportedCandidate = viewModel::updateExistingTaskFromImportedCandidate,
+                    onIgnoreImportedCandidate = viewModel::ignoreImportedCandidate
                 )
 
                 AppTab.Settings -> SettingsTab(
@@ -191,7 +199,15 @@ private fun TaskTab(
     onEditTask: (Long) -> Unit,
     onCancelEdit: () -> Unit,
     onSetDone: (Long, Boolean) -> Unit,
-    onDeleteTask: (Long) -> Unit
+    onDeleteTask: (Long) -> Unit,
+    onImportPasteChange: (String) -> Unit,
+    onAnalyzeImport: () -> Unit,
+    onImportedTitleChange: (Int, String) -> Unit,
+    onImportedSubjectChange: (Int, String) -> Unit,
+    onImportedDueDateChange: (Int, String) -> Unit,
+    onSaveImportedCandidate: (Int) -> Unit,
+    onUpdateExistingImportedCandidate: (Int) -> Unit,
+    onIgnoreImportedCandidate: (Int) -> Unit
 ) {
     ScreenColumn {
         SectionTitle(
@@ -206,6 +222,18 @@ private fun TaskTab(
             onDueDateChange = onDueDateChange,
             onSaveTask = onSaveTask,
             onCancelEdit = onCancelEdit
+        )
+
+        TaskImportSection(
+            uiState = uiState,
+            onImportPasteChange = onImportPasteChange,
+            onAnalyzeImport = onAnalyzeImport,
+            onImportedTitleChange = onImportedTitleChange,
+            onImportedSubjectChange = onImportedSubjectChange,
+            onImportedDueDateChange = onImportedDueDateChange,
+            onSaveImportedCandidate = onSaveImportedCandidate,
+            onUpdateExistingImportedCandidate = onUpdateExistingImportedCandidate,
+            onIgnoreImportedCandidate = onIgnoreImportedCandidate
         )
 
         TaskListSection(
@@ -306,6 +334,168 @@ private fun TaskEditorSection(
                     OutlinedButton(onClick = onCancelEdit) {
                         Text("취소")
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskImportSection(
+    uiState: MealUiState,
+    onImportPasteChange: (String) -> Unit,
+    onAnalyzeImport: () -> Unit,
+    onImportedTitleChange: (Int, String) -> Unit,
+    onImportedSubjectChange: (Int, String) -> Unit,
+    onImportedDueDateChange: (Int, String) -> Unit,
+    onSaveImportedCandidate: (Int) -> Unit,
+    onUpdateExistingImportedCandidate: (Int) -> Unit,
+    onIgnoreImportedCandidate: (Int) -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            SectionTitle(
+                title = "RiroSchool 가져오기",
+                description = "과제 제목과 마감일이 함께 보이도록 복사해 붙여넣으세요."
+            )
+
+            OutlinedTextField(
+                value = uiState.importPasteInput,
+                onValueChange = onImportPasteChange,
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 4,
+                label = { Text("붙여넣기") },
+                placeholder = { Text("예: 수학: 탐구 보고서 2026-05-21까지") }
+            )
+
+            Button(onClick = onAnalyzeImport) {
+                Text("후보 찾기")
+            }
+
+            uiState.taskImportMessage?.let { message ->
+                val isError = message == TaskImportMessage.EmptyPaste ||
+                    message == TaskImportMessage.NoCandidates ||
+                    message == TaskImportMessage.InvalidCandidateDueDate ||
+                    message == TaskImportMessage.EmptyCandidateTitle
+                Text(
+                    text = message.toDisplayText(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isError) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    }
+                )
+            }
+
+            uiState.importedTaskCandidates.forEach { candidate ->
+                ImportedTaskCandidateCard(
+                    candidate = candidate,
+                    onTitleChange = { value -> onImportedTitleChange(candidate.id, value) },
+                    onSubjectChange = { value -> onImportedSubjectChange(candidate.id, value) },
+                    onDueDateChange = { value -> onImportedDueDateChange(candidate.id, value) },
+                    onSave = { onSaveImportedCandidate(candidate.id) },
+                    onUpdateExisting = { onUpdateExistingImportedCandidate(candidate.id) },
+                    onIgnore = { onIgnoreImportedCandidate(candidate.id) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ImportedTaskCandidateCard(
+    candidate: ImportedTaskCandidateUiState,
+    onTitleChange: (String) -> Unit,
+    onSubjectChange: (String) -> Unit,
+    onDueDateChange: (String) -> Unit,
+    onSave: () -> Unit,
+    onUpdateExisting: () -> Unit,
+    onIgnore: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = candidate.rawText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (candidate.warnings.isNotEmpty()) {
+                Text(
+                    text = candidate.warnings.joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            candidate.possibleDuplicate?.let { duplicate ->
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.tertiaryContainer
+                ) {
+                    Text(
+                        text = "유사한 과제: ${duplicate.title} · ${duplicate.dueDateText}",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            OutlinedTextField(
+                value = candidate.titleInput,
+                onValueChange = onTitleChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("제목") }
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = candidate.subjectInput,
+                    onValueChange = onSubjectChange,
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    label = { Text("과목") }
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                OutlinedTextField(
+                    value = candidate.dueDateInput,
+                    onValueChange = onDueDateChange,
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    label = { Text("기한") },
+                    placeholder = { Text("YYYY-MM-DD") }
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onSave) {
+                    Text("새로 저장")
+                }
+                if (candidate.possibleDuplicate != null) {
+                    OutlinedButton(onClick = onUpdateExisting) {
+                        Text("기존 업데이트")
+                    }
+                }
+                TextButton(onClick = onIgnore) {
+                    Text("무시")
                 }
             }
         }
@@ -1435,4 +1625,16 @@ private fun TaskMessage.toDisplayText(): String =
         TaskMessage.Saved -> "과제가 추가되었습니다."
         TaskMessage.Updated -> "과제가 수정되었습니다."
         TaskMessage.Deleted -> "과제가 삭제되었습니다."
+    }
+
+private fun TaskImportMessage.toDisplayText(): String =
+    when (this) {
+        TaskImportMessage.EmptyPaste -> "붙여넣은 내용이 없습니다."
+        TaskImportMessage.NoCandidates -> "과제 후보를 찾지 못했습니다. 제목과 기한을 함께 붙여넣어 주세요."
+        TaskImportMessage.CandidatesFound -> "과제 후보를 찾았습니다. 저장 전에 내용을 확인해 주세요."
+        TaskImportMessage.CandidateSaved -> "가져온 과제가 저장되었습니다."
+        TaskImportMessage.CandidateUpdated -> "기존 과제가 업데이트되었습니다."
+        TaskImportMessage.CandidateIgnored -> "후보를 무시했습니다."
+        TaskImportMessage.InvalidCandidateDueDate -> "후보의 기한은 YYYY-MM-DD 형식으로 입력해 주세요."
+        TaskImportMessage.EmptyCandidateTitle -> "후보의 제목을 입력해 주세요."
     }

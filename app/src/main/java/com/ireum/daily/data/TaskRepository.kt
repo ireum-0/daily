@@ -12,6 +12,8 @@ class TaskRepository(
 
     suspend fun getTask(id: Long): TaskEntity? = taskDao.getTask(id)
 
+    suspend fun getTasks(): List<TaskEntity> = taskDao.getTasks()
+
     suspend fun saveTask(
         id: Long?,
         title: String,

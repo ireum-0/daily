@@ -3,6 +3,7 @@ package com.ireum.daily.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.ireum.daily.core.util.RiroSchoolTextParser
 import com.ireum.daily.data.MealRefreshResult
 import com.ireum.daily.data.MealRepository
 import com.ireum.daily.data.SchoolConfig
@@ -17,6 +18,8 @@ import com.ireum.daily.core.util.classifyTaskDueDate
 import com.ireum.daily.core.util.findMatchingFavoriteMenus
 import com.ireum.daily.core.util.startOfSchoolWeek
 import com.ireum.daily.model.Meal
+import com.ireum.daily.model.ImportWarning
+import com.ireum.daily.model.ImportedTaskCandidate
 import com.ireum.daily.model.TaskStatus
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +54,9 @@ class MealViewModel(
     private val taskDueDateInput = MutableStateFlow("")
     private val editingTaskId = MutableStateFlow<Long?>(null)
     private val taskMessage = MutableStateFlow<TaskMessage?>(null)
+    private val importPasteInput = MutableStateFlow("")
+    private val importedTaskCandidates = MutableStateFlow<List<ImportedTaskCandidateUiState>>(emptyList())
+    private val taskImportMessage = MutableStateFlow<TaskImportMessage?>(null)
     private val morningSummaryEnabled = MutableStateFlow(false)
     private val morningSummaryHourInput = MutableStateFlow("")
     private val morningSummaryMinuteInput = MutableStateFlow("")
@@ -186,14 +192,30 @@ class MealViewModel(
         taskSubjectInput,
         taskDueDateInput,
         editingTaskId,
-        taskMessage
-    ) { title, subject, dueDate, editingId, message ->
+        taskMessage,
+        importPasteInput,
+        importedTaskCandidates,
+        taskImportMessage
+    ) { values ->
+        val title = values[0] as String
+        val subject = values[1] as String
+        val dueDate = values[2] as String
+        val editingId = values[3] as Long?
+        val message = values[4] as TaskMessage?
+        val pasteInput = values[5] as String
+        @Suppress("UNCHECKED_CAST")
+        val importCandidates = values[6] as List<ImportedTaskCandidateUiState>
+        val importMessage = values[7] as TaskImportMessage?
+
         TaskInputState(
             title = title,
             subject = subject,
             dueDate = dueDate,
             editingTaskId = editingId,
-            message = message
+            message = message,
+            importPasteInput = pasteInput,
+            importCandidates = importCandidates,
+            importMessage = importMessage
         )
     }
 
@@ -269,6 +291,9 @@ class MealViewModel(
             taskDueDateInput = taskInput.dueDate,
             editingTaskId = taskInput.editingTaskId,
             taskMessage = taskInput.message,
+            importPasteInput = taskInput.importPasteInput,
+            importedTaskCandidates = taskInput.importCandidates,
+            taskImportMessage = taskInput.importMessage,
             morningSummaryEnabled = summaryNotificationState.morningEnabled,
             morningSummaryHourInput = summaryNotificationState.morningHourInput,
             morningSummaryMinuteInput = summaryNotificationState.morningMinuteInput,
@@ -526,6 +551,75 @@ class MealViewModel(
         taskMessage.value = null
     }
 
+    fun updateImportPaste(text: String) {
+        importPasteInput.value = text
+        taskImportMessage.value = null
+    }
+
+    fun analyzeImportedTasks() {
+        viewModelScope.launch {
+            val pasteText = importPasteInput.value.trim()
+            if (pasteText.isBlank()) {
+                taskImportMessage.value = TaskImportMessage.EmptyPaste
+                importedTaskCandidates.value = emptyList()
+                return@launch
+            }
+
+            val existingTasks = taskRepository.getTasks()
+            val candidates = RiroSchoolTextParser.parse(pasteText)
+                .mapIndexed { index, candidate -> candidate.toUiState(index, existingTasks) }
+
+            importedTaskCandidates.value = candidates
+            taskImportMessage.value = if (candidates.isEmpty()) {
+                TaskImportMessage.NoCandidates
+            } else {
+                TaskImportMessage.CandidatesFound
+            }
+        }
+    }
+
+    fun updateImportedCandidateTitle(candidateId: Int, title: String) {
+        updateImportedCandidate(candidateId) { candidate ->
+            candidate.copy(titleInput = title)
+        }
+    }
+
+    fun updateImportedCandidateSubject(candidateId: Int, subject: String) {
+        updateImportedCandidate(candidateId) { candidate ->
+            candidate.copy(subjectInput = subject)
+        }
+    }
+
+    fun updateImportedCandidateDueDate(candidateId: Int, dueDate: String) {
+        updateImportedCandidate(candidateId) { candidate ->
+            candidate.copy(dueDateInput = dueDate.filter { char -> char.isDigit() || char == '-' }.take(10))
+        }
+    }
+
+    fun saveImportedCandidate(candidateId: Int) {
+        viewModelScope.launch {
+            val candidate = importedTaskCandidates.value.firstOrNull { it.id == candidateId } ?: return@launch
+            if (!candidate.saveAsNew()) return@launch
+            removeImportedCandidate(candidateId)
+            taskImportMessage.value = TaskImportMessage.CandidateSaved
+        }
+    }
+
+    fun updateExistingTaskFromImportedCandidate(candidateId: Int) {
+        viewModelScope.launch {
+            val candidate = importedTaskCandidates.value.firstOrNull { it.id == candidateId } ?: return@launch
+            val duplicateId = candidate.possibleDuplicate?.id ?: return@launch
+            if (!candidate.saveToExisting(duplicateId)) return@launch
+            removeImportedCandidate(candidateId)
+            taskImportMessage.value = TaskImportMessage.CandidateUpdated
+        }
+    }
+
+    fun ignoreImportedCandidate(candidateId: Int) {
+        removeImportedCandidate(candidateId)
+        taskImportMessage.value = TaskImportMessage.CandidateIgnored
+    }
+
     fun saveTask() {
         viewModelScope.launch {
             val title = taskTitleInput.value.trim()
@@ -589,6 +683,47 @@ class MealViewModel(
         taskTitleInput.value = ""
         taskSubjectInput.value = ""
         taskDueDateInput.value = ""
+    }
+
+    private fun updateImportedCandidate(
+        candidateId: Int,
+        transform: (ImportedTaskCandidateUiState) -> ImportedTaskCandidateUiState
+    ) {
+        importedTaskCandidates.value = importedTaskCandidates.value.map { candidate ->
+            if (candidate.id == candidateId) transform(candidate) else candidate
+        }
+        taskImportMessage.value = null
+    }
+
+    private suspend fun ImportedTaskCandidateUiState.saveAsNew(): Boolean =
+        saveToExisting(existingTaskId = null)
+
+    private suspend fun ImportedTaskCandidateUiState.saveToExisting(existingTaskId: Long?): Boolean {
+        val title = titleInput.trim()
+        if (title.isBlank()) {
+            taskImportMessage.value = TaskImportMessage.EmptyCandidateTitle
+            return false
+        }
+
+        val dueDate = dueDateInput.trim().takeIf(String::isNotBlank)
+        if (dueDate != null && dueDate.toLocalDateOrNull() == null) {
+            taskImportMessage.value = TaskImportMessage.InvalidCandidateDueDate
+            return false
+        }
+
+        taskRepository.saveTask(
+            id = existingTaskId,
+            title = title,
+            subjectName = subjectInput.trim().takeIf(String::isNotBlank),
+            dueDate = dueDate
+        )
+        return true
+    }
+
+    private fun removeImportedCandidate(candidateId: Int) {
+        importedTaskCandidates.value = importedTaskCandidates.value.filterNot { candidate ->
+            candidate.id == candidateId
+        }
     }
 
     class Factory(
@@ -666,7 +801,10 @@ private data class TaskInputState(
     val subject: String,
     val dueDate: String,
     val editingTaskId: Long?,
-    val message: TaskMessage?
+    val message: TaskMessage?,
+    val importPasteInput: String,
+    val importCandidates: List<ImportedTaskCandidateUiState>,
+    val importMessage: TaskImportMessage?
 )
 
 private val neisDateFormatter = DateTimeFormatter.BASIC_ISO_DATE
@@ -702,6 +840,44 @@ private fun TaskEntity.toUiState(): TaskUiState =
         } ?: "기한 없음",
         isDone = status == TaskStatus.DONE
     )
+
+private fun ImportedTaskCandidate.toUiState(
+    id: Int,
+    existingTasks: List<TaskEntity>
+): ImportedTaskCandidateUiState =
+    ImportedTaskCandidateUiState(
+        id = id,
+        titleInput = title,
+        subjectInput = subjectName.orEmpty(),
+        dueDateInput = dueDate.orEmpty(),
+        rawText = rawText,
+        warnings = warnings.map(ImportWarning::toDisplayText),
+        possibleDuplicate = existingTasks.firstOrNull { task -> isPossibleDuplicateOf(task) }?.toUiState()
+    )
+
+private fun ImportedTaskCandidate.isPossibleDuplicateOf(task: TaskEntity): Boolean {
+    val sameDate = dueDate != null && dueDate == task.dueDate
+    val sameSubject = subjectName.isNullOrBlank() ||
+        task.subjectName.isNullOrBlank() ||
+        subjectName.normalizeTaskText() == task.subjectName.normalizeTaskText()
+    val importedTitle = title.normalizeTaskText()
+    val existingTitle = task.title.normalizeTaskText()
+    val similarTitle = importedTitle == existingTitle ||
+        importedTitle.contains(existingTitle) ||
+        existingTitle.contains(importedTitle)
+    return sameDate && sameSubject && similarTitle
+}
+
+private fun ImportWarning.toDisplayText(): String =
+    when (this) {
+        ImportWarning.MISSING_DUE_DATE -> "기한 확인 필요"
+        ImportWarning.MISSING_SUBJECT -> "과목 확인 필요"
+        ImportWarning.LOW_CONFIDENCE -> "낮은 신뢰도"
+        ImportWarning.TOO_MANY_DATES -> "날짜가 여러 개 감지됨"
+    }
+
+private fun String?.normalizeTaskText(): String =
+    orEmpty().filterNot(Char::isWhitespace).lowercase(Locale.KOREAN)
 
 private fun List<TaskEntity>.toTaskUiStates(
     category: TaskDateCategory,

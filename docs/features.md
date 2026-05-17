@@ -153,6 +153,26 @@ The school can come from:
 - Tasks can be deleted.
 - Active and completed tasks are displayed in separate sections.
 
+## RiroSchool Paste Import
+
+- The Task tab supports paste-based RiroSchool task import.
+- The app does not log in to RiroSchool.
+- The app does not call unofficial RiroSchool APIs.
+- The user pastes copied task text into the Task tab.
+- The parser extracts editable task candidates.
+- Candidate extraction supports:
+  - full dates such as `2026-05-21`
+  - Korean month/day dates such as `5월 21일`
+  - subject prefixes such as `수학: 보고서`
+- Candidates can be edited before saving.
+- Candidates without a detected date are kept and marked for date review.
+- Candidates can be:
+  - saved as new tasks
+  - ignored
+  - used to update a possible duplicate task
+- Possible duplicates are shown when title, subject, and due date are similar enough.
+- Duplicates are never merged automatically.
+
 ## Current Storage
 
 - DataStore preferences:
