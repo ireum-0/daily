@@ -3,6 +3,8 @@ package com.ireum.daily.ui
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -473,6 +475,7 @@ private fun HomeDashboard(
     onOpenTask: () -> Unit
 ) {
     HomeMealCard(
+        title = uiState.homeMealTitle,
         summary = uiState.homeMealSummary,
         onOpenMeal = onOpenMeal
     )
@@ -615,6 +618,7 @@ private fun Header(
 
 @Composable
 private fun HomeMealCard(
+    title: String,
     summary: HomeMealSummaryUiState?,
     onOpenMeal: () -> Unit
 ) {
@@ -634,7 +638,7 @@ private fun HomeMealCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "오늘 급식",
+                    text = title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -644,7 +648,7 @@ private fun HomeMealCard(
             }
             if (summary == null) {
                 Text(
-                    text = "오늘 표시할 급식 정보가 없습니다.",
+                    text = "${title} 정보가 없습니다.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -869,6 +873,11 @@ private fun NotificationSettingsSection(
     onNotificationMinuteChange: (String) -> Unit,
     onSaveNotificationTime: () -> Unit
 ) {
+    val saveWithPermission = notificationPermissionAwareAction(
+        needsPermission = true,
+        action = onSaveNotificationTime
+    )
+
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.elevatedCardColors(
@@ -930,10 +939,10 @@ private fun NotificationSettingsSection(
                         keyboardType = KeyboardType.Number,
                         imeAction = ImeAction.Done
                     ),
-                    keyboardActions = KeyboardActions(onDone = { onSaveNotificationTime() })
+                    keyboardActions = KeyboardActions(onDone = { saveWithPermission() })
                 )
                 Spacer(modifier = Modifier.width(10.dp))
-                Button(onClick = onSaveNotificationTime) {
+                Button(onClick = saveWithPermission) {
                     Text("저장")
                 }
             }
@@ -959,6 +968,10 @@ private fun SummaryNotificationSettingsSection(
                 context,
                 Manifest.permission.POST_NOTIFICATIONS
             ) != PackageManager.PERMISSION_GRANTED
+    val saveWithPermission = notificationPermissionAwareAction(
+        needsPermission = uiState.morningSummaryEnabled || uiState.eveningSummaryEnabled,
+        action = onSaveSummaryNotificationSettings
+    )
 
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -1008,7 +1021,7 @@ private fun SummaryNotificationSettingsSection(
                 onEnabledChange = onMorningSummaryEnabledChange,
                 onHourChange = onMorningSummaryHourChange,
                 onMinuteChange = onMorningSummaryMinuteChange,
-                onDone = onSaveSummaryNotificationSettings
+                onDone = saveWithPermission
             )
 
             SummaryTimeRow(
@@ -1020,13 +1033,39 @@ private fun SummaryNotificationSettingsSection(
                 onEnabledChange = onEveningSummaryEnabledChange,
                 onHourChange = onEveningSummaryHourChange,
                 onMinuteChange = onEveningSummaryMinuteChange,
-                onDone = onSaveSummaryNotificationSettings
+                onDone = saveWithPermission
             )
 
-            Button(onClick = onSaveSummaryNotificationSettings) {
+            Button(onClick = saveWithPermission) {
                 Text("요약 알림 저장")
             }
         }
+    }
+}
+
+@Composable
+private fun notificationPermissionAwareAction(
+    needsPermission: Boolean,
+    action: () -> Unit
+): () -> Unit {
+    val context = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = {}
+    )
+
+    return {
+        if (
+            needsPermission &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        action()
     }
 }
 

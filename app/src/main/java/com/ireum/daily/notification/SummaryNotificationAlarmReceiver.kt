@@ -155,7 +155,7 @@ class SummaryNotificationAlarmReceiver : BroadcastReceiver() {
             classifyTaskDueDate(task.dueDate, today) == TaskDateCategory.OVERDUE
         }
         return listOfNotNull(
-            "오늘까지인 과제 ${todayCount}개",
+            if (todayCount > 0) "오늘까지인 과제 ${todayCount}개" else null,
             if (overdueCount > 0) "지난 과제 ${overdueCount}개" else null
         )
     }
@@ -173,9 +173,9 @@ class SummaryNotificationAlarmReceiver : BroadcastReceiver() {
                 TaskDateCategory.THIS_WEEK
             )
         }
-        return listOf(
-            "내일까지인 과제 ${tomorrowCount}개",
-            "이번 주 남은 과제 ${weekCount}개"
+        return listOfNotNull(
+            if (tomorrowCount > 0) "내일까지인 과제 ${tomorrowCount}개" else null,
+            if (weekCount > 0) "이번 주 남은 과제 ${weekCount}개" else null
         )
     }
 

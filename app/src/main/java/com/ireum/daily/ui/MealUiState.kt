@@ -20,6 +20,7 @@ data class MealUiState(
     val notificationTimeText: String = "",
     val favoriteMenus: List<String> = emptyList(),
     val favoriteMealMatches: List<FavoriteMealMatchUiState> = emptyList(),
+    val homeMealTitle: String = "오늘 급식",
     val homeMealSummary: HomeMealSummaryUiState? = null,
     val todayTasks: List<TaskUiState> = emptyList(),
     val tomorrowTasks: List<TaskUiState> = emptyList(),
