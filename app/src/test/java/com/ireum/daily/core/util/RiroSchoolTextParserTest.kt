@@ -44,4 +44,34 @@ class RiroSchoolTextParserTest {
         assertEquals("과학 실험 보고서 작성", candidates.first().title)
         assertTrue(candidates.first().warnings.contains(ImportWarning.MISSING_DUE_DATE))
     }
+
+    @Test
+    fun parse_groupsSubjectTitleAndDateSplitAcrossLines() {
+        val candidates = RiroSchoolTextParser.parse(
+            text = """
+                수학
+                탐구 보고서
+                2026-05-21
+            """.trimIndent(),
+            today = LocalDate.of(2026, 5, 17)
+        )
+
+        assertEquals(1, candidates.size)
+        assertEquals("수학", candidates.first().subjectName)
+        assertEquals("탐구 보고서", candidates.first().title)
+        assertEquals("2026-05-21", candidates.first().dueDate)
+    }
+
+    @Test
+    fun parse_doesNotTreatTitleHyphenDateAsSubjectOnly() {
+        val candidates = RiroSchoolTextParser.parse(
+            text = "탐구 보고서 - 2026-05-21까지",
+            today = LocalDate.of(2026, 5, 17)
+        )
+
+        assertEquals(1, candidates.size)
+        assertEquals(null, candidates.first().subjectName)
+        assertEquals("탐구 보고서", candidates.first().title)
+        assertEquals("2026-05-21", candidates.first().dueDate)
+    }
 }

@@ -11,14 +11,12 @@ object RiroSchoolTextParser {
         Regex("""(\d{1,2})\s*월\s*(\d{1,2})\s*일""")
     )
     private val timePattern = Regex("""\d{1,2}\s*[:시]\s*\d{0,2}\s*분?""")
-    private val subjectPattern = Regex("""^\s*[\[\(【]?([가-힣A-Za-z0-9 ]{1,12})[\]\)】]?\s*[:：\-]\s*(.+)$""")
+    private val explicitSubjectPattern = Regex("""^\s*[\[\(【]?([가-힣A-Za-z0-9 ]{1,12})[\]\)】]?\s*[:：]\s*(.+)$""")
+    private val hyphenSubjectPattern = Regex("""^\s*([\[\(【]?[가-힣A-Za-z0-9 ]{1,12}[\]\)】]?)\s+-\s+(.+)$""")
     private val ignoredLineKeywords = listOf("과제", "수행평가", "마감", "제출", "상태", "전체")
 
     fun parse(text: String, today: LocalDate = LocalDate.now()): List<ImportedTaskCandidate> =
-        text.lines()
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .filterNot(::isIgnoredLine)
+        text.toLogicalLines()
             .mapNotNull { line -> parseLine(line, today) }
             .take(MAX_CANDIDATES)
 
@@ -52,18 +50,73 @@ object RiroSchoolTextParser {
     }
 
     private fun isIgnoredLine(line: String): Boolean {
-        if (line.length < MIN_TITLE_LENGTH) return true
+        if (line.length < MIN_TITLE_LENGTH) return !line.looksLikeSubject()
         val normalized = line.filterNot(Char::isWhitespace)
         return ignoredLineKeywords.any { keyword -> normalized == keyword }
     }
 
+    private fun String.toLogicalLines(): List<String> {
+        val result = mutableListOf<String>()
+        val pending = mutableListOf<String>()
+        lines()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .filterNot(::isIgnoredLine)
+            .forEach { line ->
+                when {
+                    line.containsDueDate() -> {
+                        if (pending.isEmpty()) {
+                            result += line
+                        } else {
+                            pending += line
+                            result += pending.toLogicalLine()
+                            pending.clear()
+                        }
+                    }
+
+                    pending.isEmpty() -> pending += line
+
+                    pending.size == 1 && pending.first().looksLikeSubjectOnlyLine() -> pending += line
+
+                    else -> {
+                        result += pending.toLogicalLine()
+                        pending.clear()
+                        pending += line
+                    }
+                }
+            }
+
+        if (pending.isNotEmpty()) {
+            result += pending.toLogicalLine()
+        }
+
+        return result
+    }
+
+    private fun List<String>.toLogicalLine(): String =
+        if (size >= 2 && first().looksLikeSubjectOnlyLine()) {
+            "${first()}: ${drop(1).joinToString(" ")}"
+        } else {
+            joinToString(" ")
+        }
+
     private fun extractSubjectAndTitle(line: String): SubjectAndTitle {
-        val match = subjectPattern.matchEntire(line)
-        if (match != null) {
-            val subject = match.groupValues[1].trim().takeIf(String::isNotBlank)
-            val title = match.groupValues[2].trim()
+        val explicitMatch = explicitSubjectPattern.matchEntire(line)
+        if (explicitMatch != null) {
+            val subject = explicitMatch.groupValues[1].trimSubject().takeIf(String::isNotBlank)
+            val title = explicitMatch.groupValues[2].trim()
             return SubjectAndTitle(subject = subject, title = title)
         }
+
+        val hyphenMatch = hyphenSubjectPattern.matchEntire(line)
+        if (hyphenMatch != null) {
+            val subject = hyphenMatch.groupValues[1].trimSubject()
+            val title = hyphenMatch.groupValues[2].trim()
+            if (subject.looksLikeSubject() && cleanupTitle(title).isNotBlank()) {
+                return SubjectAndTitle(subject = subject, title = title)
+            }
+        }
+
         return SubjectAndTitle(subject = null, title = line)
     }
 
@@ -73,6 +126,24 @@ object RiroSchoolTextParser {
             .replace(Regex("""마감|기한|제출|까지|~"""), " ")
             .replace(Regex("""\s+"""), " ")
             .trim(' ', '-', ':', '：', '/', '|')
+
+    private fun String.containsDueDate(): Boolean =
+        datePatterns.any { pattern -> pattern.containsMatchIn(this) }
+
+    private fun String.looksLikeSubjectOnlyLine(): Boolean =
+        looksLikeSubject() && !containsDueDate() && !contains(':') && !contains('：') && !contains('-')
+
+    private fun String.looksLikeSubject(): Boolean {
+        val normalized = trimSubject()
+        return normalized.length in 1..12 &&
+            normalized.any { char -> char.isLetterOrDigit() } &&
+            ignoredLineKeywords.none { keyword -> normalized == keyword }
+    }
+
+    private fun String.trimSubject(): String =
+        trim()
+            .trim('[', ']', '(', ')', '【', '】')
+            .trim()
 
     private fun MatchResult.toDueDate(today: LocalDate): String? =
         runCatching {

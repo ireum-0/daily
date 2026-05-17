@@ -601,6 +601,7 @@ class MealViewModel(
             val candidate = importedTaskCandidates.value.firstOrNull { it.id == candidateId } ?: return@launch
             if (!candidate.saveAsNew()) return@launch
             removeImportedCandidate(candidateId)
+            refreshImportedCandidateDuplicates()
             taskImportMessage.value = TaskImportMessage.CandidateSaved
         }
     }
@@ -611,6 +612,7 @@ class MealViewModel(
             val duplicateId = candidate.possibleDuplicate?.id ?: return@launch
             if (!candidate.saveToExisting(duplicateId)) return@launch
             removeImportedCandidate(candidateId)
+            refreshImportedCandidateDuplicates()
             taskImportMessage.value = TaskImportMessage.CandidateUpdated
         }
     }
@@ -723,6 +725,17 @@ class MealViewModel(
     private fun removeImportedCandidate(candidateId: Int) {
         importedTaskCandidates.value = importedTaskCandidates.value.filterNot { candidate ->
             candidate.id == candidateId
+        }
+    }
+
+    private suspend fun refreshImportedCandidateDuplicates() {
+        val existingTasks = taskRepository.getTasks()
+        importedTaskCandidates.value = importedTaskCandidates.value.map { candidate ->
+            candidate.copy(
+                possibleDuplicate = existingTasks.firstOrNull { task ->
+                    candidate.isPossibleDuplicateOf(task)
+                }?.toUiState()
+            )
         }
     }
 
@@ -861,6 +874,19 @@ private fun ImportedTaskCandidate.isPossibleDuplicateOf(task: TaskEntity): Boole
         task.subjectName.isNullOrBlank() ||
         subjectName.normalizeTaskText() == task.subjectName.normalizeTaskText()
     val importedTitle = title.normalizeTaskText()
+    val existingTitle = task.title.normalizeTaskText()
+    val similarTitle = importedTitle == existingTitle ||
+        importedTitle.contains(existingTitle) ||
+        existingTitle.contains(importedTitle)
+    return sameDate && sameSubject && similarTitle
+}
+
+private fun ImportedTaskCandidateUiState.isPossibleDuplicateOf(task: TaskEntity): Boolean {
+    val sameDate = dueDateInput.isNotBlank() && dueDateInput == task.dueDate
+    val sameSubject = subjectInput.isBlank() ||
+        task.subjectName.isNullOrBlank() ||
+        subjectInput.normalizeTaskText() == task.subjectName.normalizeTaskText()
+    val importedTitle = titleInput.normalizeTaskText()
     val existingTitle = task.title.normalizeTaskText()
     val similarTitle = importedTitle == existingTitle ||
         importedTitle.contains(existingTitle) ||
