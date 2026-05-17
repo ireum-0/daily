@@ -11,6 +11,9 @@ import com.ireum.daily.data.SchoolSearchResult
 import com.ireum.daily.data.TaskRepository
 import com.ireum.daily.data.local.TaskEntity
 import com.ireum.daily.data.preferences.NotificationTime
+import com.ireum.daily.data.preferences.SummaryNotificationSettings
+import com.ireum.daily.core.util.TaskDateCategory
+import com.ireum.daily.core.util.classifyTaskDueDate
 import com.ireum.daily.core.util.findMatchingFavoriteMenus
 import com.ireum.daily.core.util.startOfSchoolWeek
 import com.ireum.daily.model.Meal
@@ -48,6 +51,12 @@ class MealViewModel(
     private val taskDueDateInput = MutableStateFlow("")
     private val editingTaskId = MutableStateFlow<Long?>(null)
     private val taskMessage = MutableStateFlow<TaskMessage?>(null)
+    private val morningSummaryEnabled = MutableStateFlow(false)
+    private val morningSummaryHourInput = MutableStateFlow("")
+    private val morningSummaryMinuteInput = MutableStateFlow("")
+    private val eveningSummaryEnabled = MutableStateFlow(false)
+    private val eveningSummaryHourInput = MutableStateFlow("")
+    private val eveningSummaryMinuteInput = MutableStateFlow("")
 
     private val setupState = combine(
         mealRepository.schoolConfig,
@@ -88,9 +97,14 @@ class MealViewModel(
             )
         }
         val selectedMeals = meals.filter { meal -> meal.mealDate == selectedNeisDate }
+        val homeMealDate = LocalDate.now()
+            .takeIf { date -> date in startDate..startDate.endOfSchoolWeek() }
+            ?: startDate
+        val homeMeals = meals.filter { meal -> meal.mealDate == homeMealDate.toNeisDate() }
         MealDisplayState(
             selectedDate = selected,
             selectedMeals = selectedMeals,
+            homeMeals = homeMeals,
             favoriteMenus = favoriteMenus.toList().sorted(),
             favoriteMealMatches = selectedMeals.findFavoriteMealMatches(favoriteMenus),
             weekDays = weekDays,
@@ -136,6 +150,35 @@ class MealViewModel(
         )
     }
 
+    private val summaryNotificationInputState = combine(
+        morningSummaryEnabled,
+        morningSummaryHourInput,
+        morningSummaryMinuteInput,
+        eveningSummaryEnabled,
+        eveningSummaryHourInput,
+        eveningSummaryMinuteInput,
+        mealRepository.summaryNotificationSettings
+    ) { values ->
+        val morningEnabled = values[0] as Boolean
+        val morningHour = values[1] as String
+        val morningMinute = values[2] as String
+        val eveningEnabled = values[3] as Boolean
+        val eveningHour = values[4] as String
+        val eveningMinute = values[5] as String
+        val settings = values[6] as SummaryNotificationSettings
+
+        SummaryNotificationInputState(
+            morningEnabled = morningEnabled,
+            morningHourInput = morningHour,
+            morningMinuteInput = morningMinute,
+            morningTimeText = settings.morningTime.displayText,
+            eveningEnabled = eveningEnabled,
+            eveningHourInput = eveningHour,
+            eveningMinuteInput = eveningMinute,
+            eveningTimeText = settings.eveningTime.displayText
+        )
+    }
+
     private val taskInputState = combine(
         taskTitleInput,
         taskSubjectInput,
@@ -172,8 +215,12 @@ class MealViewModel(
         screenState,
         notificationInputState,
         taskRepository.observeTasks(),
-        taskInputState
-    ) { screen, notificationState, tasks, taskInput ->
+        taskInputState,
+        summaryNotificationInputState
+    ) { screen, notificationState, tasks, taskInput, summaryNotificationState ->
+        val taskUiStates = tasks.map(TaskEntity::toUiState)
+        val activeTasks = tasks.filterNot { task -> task.status == TaskStatus.DONE }
+        val today = LocalDate.now()
         MealUiState(
             selectedTab = screen.selectedTab,
             isLoading = screen.refresh.isLoading,
@@ -190,6 +237,13 @@ class MealViewModel(
             notificationTimeText = notificationState.timeText,
             favoriteMenus = screen.mealDisplay.favoriteMenus,
             favoriteMealMatches = screen.mealDisplay.favoriteMealMatches,
+            homeMealSummary = screen.mealDisplay.homeMeals.toHomeMealSummary(
+                favoriteMenus = screen.mealDisplay.favoriteMenus
+            ),
+            todayTasks = activeTasks.toTaskUiStates(TaskDateCategory.TODAY, today),
+            tomorrowTasks = activeTasks.toTaskUiStates(TaskDateCategory.TOMORROW, today),
+            weeklyTasks = activeTasks.toTaskUiStates(TaskDateCategory.THIS_WEEK, today).take(3),
+            overdueTasks = activeTasks.toTaskUiStates(TaskDateCategory.OVERDUE, today),
             dateText = screen.mealDisplay.selectedDateText,
             weekRangeText = screen.mealDisplay.weekRangeText,
             selectedDate = screen.mealDisplay.selectedDate,
@@ -205,12 +259,20 @@ class MealViewModel(
                 null
             },
             schoolMessage = screen.searchState.message,
-            tasks = tasks.map(TaskEntity::toUiState),
+            tasks = taskUiStates,
             taskTitleInput = taskInput.title,
             taskSubjectInput = taskInput.subject,
             taskDueDateInput = taskInput.dueDate,
             editingTaskId = taskInput.editingTaskId,
-            taskMessage = taskInput.message
+            taskMessage = taskInput.message,
+            morningSummaryEnabled = summaryNotificationState.morningEnabled,
+            morningSummaryHourInput = summaryNotificationState.morningHourInput,
+            morningSummaryMinuteInput = summaryNotificationState.morningMinuteInput,
+            morningSummaryTimeText = summaryNotificationState.morningTimeText,
+            eveningSummaryEnabled = summaryNotificationState.eveningEnabled,
+            eveningSummaryHourInput = summaryNotificationState.eveningHourInput,
+            eveningSummaryMinuteInput = summaryNotificationState.eveningMinuteInput,
+            eveningSummaryTimeText = summaryNotificationState.eveningTimeText
         )
     }.stateIn(
         scope = viewModelScope,
@@ -233,6 +295,24 @@ class MealViewModel(
                 }
                 if (notificationMinuteInput.value.isBlank()) {
                     notificationMinuteInput.value = notificationTime.minute.toString().padStart(2, '0')
+                }
+            }
+        }
+        viewModelScope.launch {
+            mealRepository.summaryNotificationSettings.collect { settings ->
+                morningSummaryEnabled.value = settings.morningEnabled
+                eveningSummaryEnabled.value = settings.eveningEnabled
+                if (morningSummaryHourInput.value.isBlank()) {
+                    morningSummaryHourInput.value = settings.morningTime.hour.toString().padStart(2, '0')
+                }
+                if (morningSummaryMinuteInput.value.isBlank()) {
+                    morningSummaryMinuteInput.value = settings.morningTime.minute.toString().padStart(2, '0')
+                }
+                if (eveningSummaryHourInput.value.isBlank()) {
+                    eveningSummaryHourInput.value = settings.eveningTime.hour.toString().padStart(2, '0')
+                }
+                if (eveningSummaryMinuteInput.value.isBlank()) {
+                    eveningSummaryMinuteInput.value = settings.eveningTime.minute.toString().padStart(2, '0')
                 }
             }
         }
@@ -310,6 +390,68 @@ class MealViewModel(
             notificationHourInput.value = hour.toString().padStart(2, '0')
             notificationMinuteInput.value = minute.toString().padStart(2, '0')
             schoolMessage.value = SchoolMessage.NotificationTimeSaved
+        }
+    }
+
+    fun setMorningSummaryEnabled(enabled: Boolean) {
+        morningSummaryEnabled.value = enabled
+        schoolMessage.value = null
+    }
+
+    fun updateMorningSummaryHour(hour: String) {
+        morningSummaryHourInput.value = hour.filter(Char::isDigit).take(2)
+        schoolMessage.value = null
+    }
+
+    fun updateMorningSummaryMinute(minute: String) {
+        morningSummaryMinuteInput.value = minute.filter(Char::isDigit).take(2)
+        schoolMessage.value = null
+    }
+
+    fun setEveningSummaryEnabled(enabled: Boolean) {
+        eveningSummaryEnabled.value = enabled
+        schoolMessage.value = null
+    }
+
+    fun updateEveningSummaryHour(hour: String) {
+        eveningSummaryHourInput.value = hour.filter(Char::isDigit).take(2)
+        schoolMessage.value = null
+    }
+
+    fun updateEveningSummaryMinute(minute: String) {
+        eveningSummaryMinuteInput.value = minute.filter(Char::isDigit).take(2)
+        schoolMessage.value = null
+    }
+
+    fun saveSummaryNotificationSettings() {
+        viewModelScope.launch {
+            val morningHour = morningSummaryHourInput.value.toIntOrNull()
+            val morningMinute = morningSummaryMinuteInput.value.toIntOrNull()
+            val eveningHour = eveningSummaryHourInput.value.toIntOrNull()
+            val eveningMinute = eveningSummaryMinuteInput.value.toIntOrNull()
+            if (
+                morningHour == null || morningHour !in 0..23 ||
+                morningMinute == null || morningMinute !in 0..59 ||
+                eveningHour == null || eveningHour !in 0..23 ||
+                eveningMinute == null || eveningMinute !in 0..59
+            ) {
+                schoolMessage.value = SchoolMessage.InvalidSummaryNotificationTime
+                return@launch
+            }
+
+            mealRepository.saveSummaryNotificationSettings(
+                SummaryNotificationSettings(
+                    morningEnabled = morningSummaryEnabled.value,
+                    morningTime = NotificationTime(morningHour, morningMinute),
+                    eveningEnabled = eveningSummaryEnabled.value,
+                    eveningTime = NotificationTime(eveningHour, eveningMinute)
+                )
+            )
+            morningSummaryHourInput.value = morningHour.toString().padStart(2, '0')
+            morningSummaryMinuteInput.value = morningMinute.toString().padStart(2, '0')
+            eveningSummaryHourInput.value = eveningHour.toString().padStart(2, '0')
+            eveningSummaryMinuteInput.value = eveningMinute.toString().padStart(2, '0')
+            schoolMessage.value = SchoolMessage.SummaryNotificationSettingsSaved
         }
     }
 
@@ -463,6 +605,7 @@ private data class SetupState(
 private data class MealDisplayState(
     val selectedDate: LocalDate,
     val selectedMeals: List<Meal>,
+    val homeMeals: List<Meal>,
     val favoriteMenus: List<String>,
     val favoriteMealMatches: List<FavoriteMealMatchUiState>,
     val weekDays: List<MealDayUiState>,
@@ -497,6 +640,17 @@ private data class NotificationInputState(
     val timeText: String
 )
 
+private data class SummaryNotificationInputState(
+    val morningEnabled: Boolean,
+    val morningHourInput: String,
+    val morningMinuteInput: String,
+    val morningTimeText: String,
+    val eveningEnabled: Boolean,
+    val eveningHourInput: String,
+    val eveningMinuteInput: String,
+    val eveningTimeText: String
+)
+
 private data class TaskInputState(
     val title: String,
     val subject: String,
@@ -528,6 +682,28 @@ private fun TaskEntity.toUiState(): TaskUiState =
         } ?: "기한 없음",
         isDone = status == TaskStatus.DONE
     )
+
+private fun List<TaskEntity>.toTaskUiStates(
+    category: TaskDateCategory,
+    today: LocalDate
+): List<TaskUiState> =
+    filter { task -> classifyTaskDueDate(task.dueDate, today) == category }
+        .map(TaskEntity::toUiState)
+
+private fun List<Meal>.toHomeMealSummary(favoriteMenus: List<String>): HomeMealSummaryUiState? {
+    if (isEmpty()) return null
+    val lines = map { meal ->
+        "${meal.mealName}: ${meal.dishes.take(3).joinToString(", ")}"
+    }
+    val favoriteMatches = findFavoriteMealMatches(favoriteMenus.toSet())
+    return HomeMealSummaryUiState(
+        title = "오늘 급식",
+        lines = lines,
+        favoriteText = favoriteMatches
+            .takeIf(List<FavoriteMealMatchUiState>::isNotEmpty)
+            ?.joinToString(" / ") { match -> "${match.mealName}: ${match.menus.joinToString(", ")}" }
+    )
+}
 
 private fun List<Meal>.findFavoriteMealMatches(favoriteMenus: Set<String>): List<FavoriteMealMatchUiState> =
     mapNotNull { meal ->

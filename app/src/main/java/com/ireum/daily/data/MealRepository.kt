@@ -4,6 +4,7 @@ import com.ireum.daily.data.local.MealDao
 import com.ireum.daily.data.local.MealEntity
 import com.ireum.daily.data.preferences.NotificationTime
 import com.ireum.daily.data.preferences.SchoolPreferences
+import com.ireum.daily.data.preferences.SummaryNotificationSettings
 import com.ireum.daily.data.remote.NeisMealApi
 import com.ireum.daily.data.remote.RemoteMeal
 import com.ireum.daily.data.remote.RemoteSchool
@@ -31,6 +32,8 @@ class MealRepository(
     val neisApiKey: Flow<String> = schoolPreferences.neisApiKey
     val favoriteMenus: Flow<Set<String>> = schoolPreferences.favoriteMenus
     val notificationTime: Flow<NotificationTime> = schoolPreferences.notificationTime
+    val summaryNotificationSettings: Flow<SummaryNotificationSettings> =
+        schoolPreferences.summaryNotificationSettings
     val hasNeisApiKey: Flow<Boolean> =
         schoolPreferences.neisApiKey.map { apiKey -> apiKey.isNotBlank() || defaultNeisApiKey.isNotBlank() }
 
@@ -84,6 +87,10 @@ class MealRepository(
 
     suspend fun saveNotificationTime(notificationTime: NotificationTime) {
         schoolPreferences.saveNotificationTime(notificationTime)
+    }
+
+    suspend fun saveSummaryNotificationSettings(settings: SummaryNotificationSettings) {
+        schoolPreferences.saveSummaryNotificationSettings(settings)
     }
 
     suspend fun searchSchools(query: String): SchoolSearchResult {

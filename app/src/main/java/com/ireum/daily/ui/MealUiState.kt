@@ -20,6 +20,11 @@ data class MealUiState(
     val notificationTimeText: String = "",
     val favoriteMenus: List<String> = emptyList(),
     val favoriteMealMatches: List<FavoriteMealMatchUiState> = emptyList(),
+    val homeMealSummary: HomeMealSummaryUiState? = null,
+    val todayTasks: List<TaskUiState> = emptyList(),
+    val tomorrowTasks: List<TaskUiState> = emptyList(),
+    val weeklyTasks: List<TaskUiState> = emptyList(),
+    val overdueTasks: List<TaskUiState> = emptyList(),
     val dateText: String = "",
     val weekRangeText: String = "",
     val selectedDate: LocalDate = LocalDate.now(),
@@ -32,11 +37,20 @@ data class MealUiState(
     val taskSubjectInput: String = "",
     val taskDueDateInput: String = "",
     val editingTaskId: Long? = null,
-    val taskMessage: TaskMessage? = null
+    val taskMessage: TaskMessage? = null,
+    val morningSummaryEnabled: Boolean = false,
+    val morningSummaryHourInput: String = "",
+    val morningSummaryMinuteInput: String = "",
+    val morningSummaryTimeText: String = "",
+    val eveningSummaryEnabled: Boolean = false,
+    val eveningSummaryHourInput: String = "",
+    val eveningSummaryMinuteInput: String = "",
+    val eveningSummaryTimeText: String = ""
 )
 
 enum class AppTab {
     Home,
+    Meal,
     Task,
     Settings
 }
@@ -52,6 +66,12 @@ data class MealDayUiState(
 data class FavoriteMealMatchUiState(
     val mealName: String,
     val menus: List<String>
+)
+
+data class HomeMealSummaryUiState(
+    val title: String,
+    val lines: List<String>,
+    val favoriteText: String?
 )
 
 data class TaskUiState(
@@ -79,7 +99,9 @@ enum class SchoolMessage {
     Saved,
     ApiKeySaved,
     NotificationTimeSaved,
-    InvalidNotificationTime
+    InvalidNotificationTime,
+    SummaryNotificationSettingsSaved,
+    InvalidSummaryNotificationTime
 }
 
 enum class TaskMessage {

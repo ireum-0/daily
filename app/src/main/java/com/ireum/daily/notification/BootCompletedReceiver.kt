@@ -15,12 +15,17 @@ class BootCompletedReceiver : BroadcastReceiver() {
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val notificationTime = SchoolPreferences(context.applicationContext)
+                    val preferences = SchoolPreferences(context.applicationContext)
+                    val notificationTime = preferences
                         .notificationTime
                         .first()
                     FavoriteMealNotificationScheduler.scheduleDaily(
                         context = context.applicationContext,
                         notificationTime = notificationTime
+                    )
+                    SummaryNotificationScheduler.schedule(
+                        context = context.applicationContext,
+                        settings = preferences.summaryNotificationSettings.first()
                     )
                 } finally {
                     pendingResult.finish()

@@ -13,6 +13,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ireum.daily.notification.FavoriteMealNotificationScheduler
+import com.ireum.daily.notification.SummaryNotificationScheduler
 import com.ireum.daily.ui.MealScreen
 import com.ireum.daily.ui.MealViewModel
 import com.ireum.daily.ui.theme.DailyTheme
@@ -29,6 +30,7 @@ class MainActivity : ComponentActivity() {
         val appContainer = (application as DailyApplication).appContainer
         requestNotificationPermissionIfNeeded()
         scheduleFavoriteMealNotifications()
+        scheduleSummaryNotifications()
 
         setContent {
             DailyTheme {
@@ -63,6 +65,20 @@ class MainActivity : ComponentActivity() {
                     FavoriteMealNotificationScheduler.scheduleDaily(
                         context = this@MainActivity,
                         notificationTime = notificationTime
+                    )
+                }
+            }
+        }
+    }
+
+    private fun scheduleSummaryNotifications() {
+        val appContainer = (application as DailyApplication).appContainer
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                appContainer.mealRepository.summaryNotificationSettings.collect { settings ->
+                    SummaryNotificationScheduler.schedule(
+                        context = this@MainActivity,
+                        settings = settings
                     )
                 }
             }

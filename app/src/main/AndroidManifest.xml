@@ -31,6 +31,10 @@
             android:exported="false" />
 
         <receiver
+            android:name=".notification.SummaryNotificationAlarmReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".notification.BootCompletedReceiver"
             android:exported="true">
             <intent-filter>

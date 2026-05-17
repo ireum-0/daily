@@ -9,9 +9,11 @@ This file is the working feature map for future additions.
 ## Navigation
 
 - Home
+  - Shows a dashboard for today's meal and urgent tasks.
+  - If the app is not configured yet, shows the initial setup form instead of the meal table.
+- Meal
   - Shows the active school's meal table.
   - Shows only school days: Monday, Tuesday, Wednesday, Thursday, Friday.
-  - If the app is not configured yet, shows the initial setup form instead of the meal table.
 - Task
   - Shows manually saved tasks.
   - Separates active tasks from completed tasks.
@@ -20,6 +22,20 @@ This file is the working feature map for future additions.
   - Stores the NEIS API key.
   - Searches and saves the school.
   - Selects the favorite breakfast notification time.
+  - Selects morning and evening summary notification settings.
+
+## Home Dashboard
+
+- Home shows today's meal summary.
+- Home shows favorite menu matches in today's meals when available.
+- Home shows incomplete tasks grouped by:
+  - due today
+  - due tomorrow
+  - due this week
+  - overdue
+- Done tasks are hidden from Home.
+- Tasks without due dates are hidden from Home.
+- Home cards can open the Meal or Task tabs.
 
 ## Initial Setup
 
@@ -103,6 +119,25 @@ The school can come from:
 - Notifications require Android notification permission on Android 13 and newer.
 - Alarms are rescheduled after device boot.
 
+## Summary Notifications
+
+- Morning and evening summary notifications can be enabled in Settings.
+- Morning summary includes:
+  - count of tasks due today
+  - count of overdue tasks when present
+  - favorite menu matches in today's meals when present
+- Evening summary includes:
+  - count of tasks due tomorrow
+  - count of remaining tasks due this week
+  - favorite menu matches in tomorrow's meals when present
+- Summary notifications use a 24-hour clock.
+- Invalid values are rejected instead of being saved:
+  - hour must be 0-23
+  - minute must be 0-59
+- Changing summary notification settings reschedules alarms.
+- Summary notification alarms are rescheduled after device boot.
+- Settings shows a warning when notification permission is missing on Android 13 and newer.
+
 ## Manual Tasks
 
 - The Task tab supports manual task management.
@@ -124,6 +159,8 @@ The school can come from:
   - NEIS API key
   - selected school
   - favorite menu keywords
+  - favorite breakfast notification time
+  - morning/evening summary notification settings
 - Room:
   - cached meal rows
   - manually saved tasks
@@ -135,5 +172,5 @@ The school can come from:
 - Add notification support for favorite menu matches.
 - Add tests for week-start calculation and favorite menu matching.
 - Add a nicer icon-based bottom navigation.
-- Add today/tomorrow/this-week task classification.
-- Add Home task summary cards.
+- Add task section filters in the Task tab.
+- Add individual migration verification tests.

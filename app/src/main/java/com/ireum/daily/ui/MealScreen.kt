@@ -1,5 +1,8 @@
 package com.ireum.daily.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,12 +40,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.ireum.daily.R
 import com.ireum.daily.core.util.matchesFavoriteMenu
 import com.ireum.daily.data.SchoolSearchItem
@@ -71,14 +76,19 @@ fun MealScreen(viewModel: MealViewModel) {
             when (uiState.selectedTab) {
                 AppTab.Home -> HomeTab(
                     uiState = uiState,
-                    onRefresh = viewModel::refresh,
-                    onSelectDate = viewModel::selectDate,
-                    onToggleFavoriteMenu = viewModel::toggleFavoriteMenu,
+                    onSelectTab = viewModel::selectTab,
                     onApiKeyChange = viewModel::updateApiKey,
                     onSaveApiKey = viewModel::saveApiKey,
                     onQueryChange = viewModel::updateSchoolQuery,
                     onSearch = viewModel::searchSchools,
                     onSelectSchool = viewModel::selectSchool
+                )
+
+                AppTab.Meal -> MealTab(
+                    uiState = uiState,
+                    onRefresh = viewModel::refresh,
+                    onSelectDate = viewModel::selectDate,
+                    onToggleFavoriteMenu = viewModel::toggleFavoriteMenu
                 )
 
                 AppTab.Task -> TaskTab(
@@ -102,7 +112,14 @@ fun MealScreen(viewModel: MealViewModel) {
                     onSelectSchool = viewModel::selectSchool,
                     onNotificationHourChange = viewModel::updateNotificationHour,
                     onNotificationMinuteChange = viewModel::updateNotificationMinute,
-                    onSaveNotificationTime = viewModel::saveNotificationTime
+                    onSaveNotificationTime = viewModel::saveNotificationTime,
+                    onMorningSummaryEnabledChange = viewModel::setMorningSummaryEnabled,
+                    onMorningSummaryHourChange = viewModel::updateMorningSummaryHour,
+                    onMorningSummaryMinuteChange = viewModel::updateMorningSummaryMinute,
+                    onEveningSummaryEnabledChange = viewModel::setEveningSummaryEnabled,
+                    onEveningSummaryHourChange = viewModel::updateEveningSummaryHour,
+                    onEveningSummaryMinuteChange = viewModel::updateEveningSummaryMinute,
+                    onSaveSummaryNotificationSettings = viewModel::saveSummaryNotificationSettings
                 )
             }
         }
@@ -125,6 +142,17 @@ private fun DailyBottomBar(
                 )
             },
             label = { Text("홈") }
+        )
+        NavigationBarItem(
+            selected = selectedTab == AppTab.Meal,
+            onClick = { onSelectTab(AppTab.Meal) },
+            icon = {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_nav_meal),
+                    contentDescription = null
+                )
+            },
+            label = { Text("급식") }
         )
         NavigationBarItem(
             selected = selectedTab == AppTab.Task,
@@ -379,9 +407,7 @@ private fun TaskRow(
 @Composable
 private fun HomeTab(
     uiState: MealUiState,
-    onRefresh: () -> Unit,
-    onSelectDate: (LocalDate) -> Unit,
-    onToggleFavoriteMenu: (String) -> Unit,
+    onSelectTab: (AppTab) -> Unit,
     onApiKeyChange: (String) -> Unit,
     onSaveApiKey: () -> Unit,
     onQueryChange: (String) -> Unit,
@@ -391,9 +417,9 @@ private fun HomeTab(
     ScreenColumn {
         Header(
             schoolName = uiState.schoolName,
-            weekRangeText = uiState.weekRangeText,
+            subtitle = "오늘 필요한 급식과 과제만 모아봅니다.",
             isLoading = uiState.isLoading,
-            onRefresh = onRefresh
+            onRefresh = null
         )
 
         if (!uiState.isSetupComplete) {
@@ -408,13 +434,74 @@ private fun HomeTab(
                 onSelectSchool = onSelectSchool
             )
         } else {
-            MealSection(
+            HomeDashboard(
                 uiState = uiState,
-                onRefresh = onRefresh,
-                onSelectDate = onSelectDate,
-                onToggleFavoriteMenu = onToggleFavoriteMenu
+                onOpenMeal = { onSelectTab(AppTab.Meal) },
+                onOpenTask = { onSelectTab(AppTab.Task) }
             )
         }
+    }
+}
+
+@Composable
+private fun MealTab(
+    uiState: MealUiState,
+    onRefresh: () -> Unit,
+    onSelectDate: (LocalDate) -> Unit,
+    onToggleFavoriteMenu: (String) -> Unit
+) {
+    ScreenColumn {
+        Header(
+            schoolName = uiState.schoolName,
+            subtitle = uiState.weekRangeText,
+            isLoading = uiState.isLoading,
+            onRefresh = onRefresh
+        )
+        MealSection(
+            uiState = uiState,
+            onRefresh = onRefresh,
+            onSelectDate = onSelectDate,
+            onToggleFavoriteMenu = onToggleFavoriteMenu
+        )
+    }
+}
+
+@Composable
+private fun HomeDashboard(
+    uiState: MealUiState,
+    onOpenMeal: () -> Unit,
+    onOpenTask: () -> Unit
+) {
+    HomeMealCard(
+        summary = uiState.homeMealSummary,
+        onOpenMeal = onOpenMeal
+    )
+    HomeTaskCard(
+        title = "오늘까지",
+        emptyText = "오늘까지인 과제가 없습니다.",
+        tasks = uiState.todayTasks,
+        onOpenTask = onOpenTask
+    )
+    HomeTaskCard(
+        title = "내일까지",
+        emptyText = "내일까지인 과제가 없습니다.",
+        tasks = uiState.tomorrowTasks,
+        onOpenTask = onOpenTask
+    )
+    HomeTaskCard(
+        title = "이번 주",
+        emptyText = "이번 주 남은 과제가 없습니다.",
+        tasks = uiState.weeklyTasks,
+        onOpenTask = onOpenTask
+    )
+    if (uiState.overdueTasks.isNotEmpty()) {
+        HomeTaskCard(
+            title = "지난 과제",
+            emptyText = "",
+            tasks = uiState.overdueTasks,
+            onOpenTask = onOpenTask,
+            isWarning = true
+        )
     }
 }
 
@@ -428,7 +515,14 @@ private fun SettingsTab(
     onSelectSchool: (SchoolSearchItem) -> Unit,
     onNotificationHourChange: (String) -> Unit,
     onNotificationMinuteChange: (String) -> Unit,
-    onSaveNotificationTime: () -> Unit
+    onSaveNotificationTime: () -> Unit,
+    onMorningSummaryEnabledChange: (Boolean) -> Unit,
+    onMorningSummaryHourChange: (String) -> Unit,
+    onMorningSummaryMinuteChange: (String) -> Unit,
+    onEveningSummaryEnabledChange: (Boolean) -> Unit,
+    onEveningSummaryHourChange: (String) -> Unit,
+    onEveningSummaryMinuteChange: (String) -> Unit,
+    onSaveSummaryNotificationSettings: () -> Unit
 ) {
     ScreenColumn {
         SectionTitle(
@@ -455,6 +549,16 @@ private fun SettingsTab(
             onNotificationMinuteChange = onNotificationMinuteChange,
             onSaveNotificationTime = onSaveNotificationTime
         )
+        SummaryNotificationSettingsSection(
+            uiState = uiState,
+            onMorningSummaryEnabledChange = onMorningSummaryEnabledChange,
+            onMorningSummaryHourChange = onMorningSummaryHourChange,
+            onMorningSummaryMinuteChange = onMorningSummaryMinuteChange,
+            onEveningSummaryEnabledChange = onEveningSummaryEnabledChange,
+            onEveningSummaryHourChange = onEveningSummaryHourChange,
+            onEveningSummaryMinuteChange = onEveningSummaryMinuteChange,
+            onSaveSummaryNotificationSettings = onSaveSummaryNotificationSettings
+        )
     }
 }
 
@@ -473,9 +577,9 @@ private fun ScreenColumn(content: @Composable ColumnScope.() -> Unit) {
 @Composable
 private fun Header(
     schoolName: String,
-    weekRangeText: String,
+    subtitle: String,
     isLoading: Boolean,
-    onRefresh: () -> Unit
+    onRefresh: (() -> Unit)?
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -492,17 +596,150 @@ private fun Header(
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = weekRangeText.ifBlank { "1주일 급식표" },
+                text = subtitle.ifBlank { "Daily" },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Spacer(modifier = Modifier.width(12.dp))
-        OutlinedButton(
-            onClick = onRefresh,
-            enabled = !isLoading
+        if (onRefresh != null) {
+            Spacer(modifier = Modifier.width(12.dp))
+            OutlinedButton(
+                onClick = onRefresh,
+                enabled = !isLoading
+            ) {
+                Text("새로고침")
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeMealCard(
+    summary: HomeMealSummaryUiState?,
+    onOpenMeal: () -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("새로고침")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "오늘 급식",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                TextButton(onClick = onOpenMeal) {
+                    Text("보기")
+                }
+            }
+            if (summary == null) {
+                Text(
+                    text = "오늘 표시할 급식 정보가 없습니다.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                summary.lines.forEach { line ->
+                    Text(
+                        text = line,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                summary.favoriteText?.let { favoriteText ->
+                    Surface(
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = "선호 메뉴: $favoriteText",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeTaskCard(
+    title: String,
+    emptyText: String,
+    tasks: List<TaskUiState>,
+    onOpenTask: () -> Unit,
+    isWarning: Boolean = false
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = if (isWarning) {
+                MaterialTheme.colorScheme.errorContainer
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "$title ${tasks.size}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isWarning) {
+                        MaterialTheme.colorScheme.onErrorContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    }
+                )
+                TextButton(onClick = onOpenTask) {
+                    Text("보기")
+                }
+            }
+            if (tasks.isEmpty()) {
+                Text(
+                    text = emptyText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isWarning) {
+                        MaterialTheme.colorScheme.onErrorContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            } else {
+                tasks.forEach { task ->
+                    Text(
+                        text = listOf(task.title, task.subjectName, task.dueDateText)
+                            .filter(String::isNotBlank)
+                            .joinToString(" · "),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isWarning) {
+                            MaterialTheme.colorScheme.onErrorContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
+                    )
+                }
+            }
         }
     }
 }
@@ -581,7 +818,9 @@ private fun SchoolSettingsSection(
             uiState.schoolMessage
                 ?.takeUnless { message ->
                     message == SchoolMessage.NotificationTimeSaved ||
-                        message == SchoolMessage.InvalidNotificationTime
+                        message == SchoolMessage.InvalidNotificationTime ||
+                        message == SchoolMessage.SummaryNotificationSettingsSaved ||
+                        message == SchoolMessage.InvalidSummaryNotificationTime
                 }
                 ?.let { message ->
                 val isPositive = message == SchoolMessage.Saved ||
@@ -698,6 +937,158 @@ private fun NotificationSettingsSection(
                     Text("저장")
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SummaryNotificationSettingsSection(
+    uiState: MealUiState,
+    onMorningSummaryEnabledChange: (Boolean) -> Unit,
+    onMorningSummaryHourChange: (String) -> Unit,
+    onMorningSummaryMinuteChange: (String) -> Unit,
+    onEveningSummaryEnabledChange: (Boolean) -> Unit,
+    onEveningSummaryHourChange: (String) -> Unit,
+    onEveningSummaryMinuteChange: (String) -> Unit,
+    onSaveSummaryNotificationSettings: () -> Unit
+) {
+    val context = LocalContext.current
+    val notificationPermissionMissing =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            SectionTitle(
+                title = "요약 알림",
+                description = "아침에는 오늘 할 일, 저녁에는 내일 준비할 일을 알려줍니다."
+            )
+
+            if (notificationPermissionMissing) {
+                Text(
+                    text = "알림 권한이 꺼져 있어 요약 알림이 표시되지 않을 수 있습니다.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            if (
+                uiState.schoolMessage == SchoolMessage.SummaryNotificationSettingsSaved ||
+                uiState.schoolMessage == SchoolMessage.InvalidSummaryNotificationTime
+            ) {
+                val isValid = uiState.schoolMessage == SchoolMessage.SummaryNotificationSettingsSaved
+                Text(
+                    text = uiState.schoolMessage.toDisplayText(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isValid) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    }
+                )
+            }
+
+            SummaryTimeRow(
+                title = "아침",
+                enabled = uiState.morningSummaryEnabled,
+                timeText = uiState.morningSummaryTimeText,
+                hourInput = uiState.morningSummaryHourInput,
+                minuteInput = uiState.morningSummaryMinuteInput,
+                onEnabledChange = onMorningSummaryEnabledChange,
+                onHourChange = onMorningSummaryHourChange,
+                onMinuteChange = onMorningSummaryMinuteChange,
+                onDone = onSaveSummaryNotificationSettings
+            )
+
+            SummaryTimeRow(
+                title = "저녁",
+                enabled = uiState.eveningSummaryEnabled,
+                timeText = uiState.eveningSummaryTimeText,
+                hourInput = uiState.eveningSummaryHourInput,
+                minuteInput = uiState.eveningSummaryMinuteInput,
+                onEnabledChange = onEveningSummaryEnabledChange,
+                onHourChange = onEveningSummaryHourChange,
+                onMinuteChange = onEveningSummaryMinuteChange,
+                onDone = onSaveSummaryNotificationSettings
+            )
+
+            Button(onClick = onSaveSummaryNotificationSettings) {
+                Text("요약 알림 저장")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryTimeRow(
+    title: String,
+    enabled: Boolean,
+    timeText: String,
+    hourInput: String,
+    minuteInput: String,
+    onEnabledChange: (Boolean) -> Unit,
+    onHourChange: (String) -> Unit,
+    onMinuteChange: (String) -> Unit,
+    onDone: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = enabled,
+                onCheckedChange = onEnabledChange
+            )
+            Text(
+                text = "$title 요약 $timeText",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = hourInput,
+                onValueChange = onHourChange,
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                label = { Text("시") },
+                placeholder = { Text("0-23") },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Next
+                )
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(":")
+            Spacer(modifier = Modifier.width(8.dp))
+            OutlinedTextField(
+                value = minuteInput,
+                onValueChange = onMinuteChange,
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                label = { Text("분") },
+                placeholder = { Text("0-59") },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(onDone = { onDone() })
+            )
         }
     }
 }
@@ -994,6 +1385,8 @@ private fun SchoolMessage.toDisplayText(): String =
         SchoolMessage.ApiKeySaved -> "NEIS API 키가 저장되었습니다."
         SchoolMessage.NotificationTimeSaved -> "알림 시간이 저장되었습니다."
         SchoolMessage.InvalidNotificationTime -> "알림 시간은 시 0-23, 분 0-59 범위로 입력해 주세요."
+        SchoolMessage.SummaryNotificationSettingsSaved -> "요약 알림 설정이 저장되었습니다."
+        SchoolMessage.InvalidSummaryNotificationTime -> "요약 알림 시간은 시 0-23, 분 0-59 범위로 입력해 주세요."
     }
 
 private fun TaskMessage.toDisplayText(): String =
