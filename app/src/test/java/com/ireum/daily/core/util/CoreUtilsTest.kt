@@ -52,4 +52,17 @@ class CoreUtilsTest {
         assertEquals("가", "돈까스, 우유".subjectParticle())
         assertEquals("가", "Pasta".subjectParticle())
     }
+
+    @Test
+    fun classifyTaskDueDate_groupsDatesRelativeToToday() {
+        val today = LocalDate.of(2026, 5, 20)
+
+        assertEquals(TaskDateCategory.OVERDUE, classifyTaskDueDate("2026-05-19", today))
+        assertEquals(TaskDateCategory.TODAY, classifyTaskDueDate("2026-05-20", today))
+        assertEquals(TaskDateCategory.TOMORROW, classifyTaskDueDate("2026-05-21", today))
+        assertEquals(TaskDateCategory.THIS_WEEK, classifyTaskDueDate("2026-05-23", today))
+        assertEquals(TaskDateCategory.FUTURE, classifyTaskDueDate("2026-05-25", today))
+        assertEquals(TaskDateCategory.NO_DUE_DATE, classifyTaskDueDate(null, today))
+        assertEquals(TaskDateCategory.NO_DUE_DATE, classifyTaskDueDate("bad-date", today))
+    }
 }

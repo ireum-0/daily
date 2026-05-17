@@ -522,7 +522,9 @@ private fun TaskEntity.toUiState(): TaskUiState =
         title = title,
         subjectName = subjectName.orEmpty(),
         dueDateText = dueDate?.let { date ->
-            LocalDate.parse(date).format(DateTimeFormatter.ofPattern("M.d E", Locale.KOREAN))
+            runCatching {
+                LocalDate.parse(date).format(DateTimeFormatter.ofPattern("M.d E", Locale.KOREAN))
+            }.getOrDefault(date)
         } ?: "기한 없음",
         isDone = status == TaskStatus.DONE
     )
